@@ -1,0 +1,244 @@
+/*
+Shapes are made of two parts:
+	1) Object Body
+		--a rigid body; it does not have any shape: it needs one or more dGeoms for that
+	2) Object GeomBody
+		--Geometry objects (or "geoms" for short) are the fundamental objects in the collision system. 
+		A geom can represents a single rigid shape (such as a sphere or box), or it can represents a group of other geoms-
+		this is a special kind of geom called a "space".  Any geom can be collided against any other geom to yield zero or more contact points. 
+		Spaces have the extra capability of being able to collide their contained geoms together to yield internal contact points.
+*/
+
+/*
+-----------------------------------------------------------------------------
+-----------------------------------------------------------------------------
+-------------------------TAKEN FROM DEMO-FRICTION----------------------------
+-----------------------------------------------------------------------------
+-----------------------------------------------------------------------------
+*/
+#include <ode/ode.h>
+#include <drawstuff/drawstuff.h>
+#include "texturepath.h"
+
+#ifdef _MSC_VER
+#pragma warning(disable:4244 4305)  // for VC++, no precision loss complaints
+#endif
+
+// select correct drawing functions
+
+#ifdef dDOUBLE
+#define dsDrawBox dsDrawBoxD
+#define dsDrawSphere dsDrawSphereD
+//#define dsDrawCylinder dsDrawCylinderD
+//#define dsDrawCapsule dsDrawCapsuleD
+#endif
+
+
+// some constants
+//=-=-=-=-=-=-=-=
+	#define LENGTH 1	// box length & width
+	#define WIDTH 1
+	#define HEIGHT 1	// box height
+//=-=-=-=-=-=-=-=
+	#define LENGTH2 0.5	// box length & width
+	#define WIDTH2 0.5
+	#define HEIGHT2 3	// box height
+//=-=-=-=-=-=-=-=
+	#define MASS 0.4	// mass of box[i][j] = (i+1) * MASS    ; default 0.4
+	#define FORCE 0.05	// force applied to box[i][j] = (j+1) * FORCE
+	#define MU 0.5		// the global mu to use
+	#define GRAVITY 0.005	// the global gravity to use
+//Orig Grav 0.1
+//-=-=-=-=-=-=-=-=-DEFINING THE QUANTITIES OF ITEMS TO CREATE-=-=-=-=-=-=-=-=-
+	#define N1 2		// number of bodies to create //>------Define the number of objects you want-------<
+	#define N2 1		//number of spheres to create
+//-=-=-=-=-=-=-=-=-DEFINING THE QUANTITIES OF ITEMS TO CREATE-=-=-=-=-=-=-=-=-
+
+// dynamics and collision objects
+//-=-=-=-=-=-=-=-=-WORLD-=-=-=-=-=-=-=-=-
+	static dWorldID world;//Creating a world
+	static dSpaceID space;
+//-=-=-=-=-=-=-=-=-CUBES-=-=-=-=-=-=-=-=-
+	static dBodyID body[N1]; //Creating an M dimensional array for box bodies 
+	static dJointGroupID contactgroup;
+	static dGeomID ground;//Creating Geom for ground
+	static dGeomID box[N1];//Creating an M dimensional array for box geoms
+//-=-=-=-=-=-=-=-=-SPHERE-=-=-=-=-=-=-=-=-
+	#define RADIUS 0.75		// sphere radius
+	#define WMASS 1			// sphere mass
+	static dBodyID sphere_body[N2];
+	static dGeomID sphere[N2];	//number of spheres that can be created
+	static int spheres;
+
+
+// this is called by dSpaceCollide when two objects in space are
+// potentially colliding.
+static void nearCallback (void *data, dGeomID o1, dGeomID o2)
+{
+  int i;
+
+  // only collide things with the ground
+  int g1 = (o1 == ground);
+  int g2 = (o2 == ground);
+  if (!(g1 ^ g2)) return;
+
+  dBodyID b1 = dGeomGetBody(o1);
+  dBodyID b2 = dGeomGetBody(o2);
+
+  dContact contact[3];		// up to 3 contacts per box
+  for (i=0; i<3; i++) {
+    contact[i].surface.mode = dContactSoftCFM | dContactApprox1;
+    contact[i].surface.mu = MU;
+    contact[i].surface.soft_cfm = 0.01;
+  }
+  if (int numc = dCollide (o1,o2,3,&contact[0].geom,sizeof(dContact))) {
+    for (i=0; i<numc; i++) {
+      dJointID c = dJointCreateContact (world,contactgroup,contact+i);
+      dJointAttach (c,b1,b2);
+    }
+  }
+}
+
+// start simulation - set viewpoint
+
+static void start()
+{
+  dAllocateODEDataForThread(dAllocateMaskAll);
+
+  static float xyz[3] = {1.7772,-0.7924,2.7600};
+  static float hpr[3] = {90.0000,-54.0000,0.0000};
+  dsSetViewpoint (xyz,hpr);
+}
+
+
+// simulation loop
+
+static void simLoop (int pause)
+{
+  //int i;
+	//pause=!pause;
+  if (!pause) {
+    // apply forces to all bodies
+	  
+	//dBodyAddForce (body[0],FORCE*(0.2),0,0);
+	//dBodyAddForce (body[1],FORCE*(0.2),0,0);
+	//dBodyAddForce (sphere_body[0],FORCE*(0.2),0,0);
+	
+
+
+    dSpaceCollide (space,0,&nearCallback);
+	//dWorldStep (world,0.5);//Original Speed
+	//dWorldStep (world,0.01);//Slower Speed
+    dWorldStep (world,0.03); //<---------------------------Changing step simulation time
+
+
+    // remove all contact joints
+    dJointGroupEmpty (contactgroup);
+  }
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //******************* DEFINING THE DRAWING BODIES ***********************
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  dsSetColor (1,0,1);
+  dReal sides[3] = {LENGTH,WIDTH,HEIGHT};//<-------------------------Defining the length and width and height of the cube
+  dsDrawBox (dGeomGetPosition(box[0]),dGeomGetRotation(box[0]),sides);
+
+  dsSetColor (1,1,1);//<----Grey
+  dReal sides2[3] = {LENGTH2,WIDTH2,HEIGHT2};//<-------------------------Defining the length and width and height of the cube2
+  dsDrawBox (dGeomGetPosition(box[1]),dGeomGetRotation(box[1]),sides2);
+
+  dsSetColor (0,0.5,1);//<----Blue Sphere
+  dsDrawSphere (dBodyGetPosition(sphere_body[0]),dBodyGetRotation(sphere_body[0]),RADIUS);
+}
+
+
+int main (int argc, char **argv)
+{
+  //int i,j;
+  dMass m;
+  //pause=!pause;
+  // setup pointers to drawstuff callback functions
+  dsFunctions fn;
+  fn.version = DS_VERSION;
+  fn.start = &start;
+  fn.step = &simLoop;
+  //fn.command = &command;
+  fn.command = 0;
+  fn.stop = 0;
+  fn.path_to_textures = DRAWSTUFF_TEXTURE_PATH;
+
+  // create world
+  dInitODE2(0);
+  world = dWorldCreate();
+  space = dHashSpaceCreate (0);
+  contactgroup = dJointGroupCreate (0);
+  dWorldSetGravity (world,0,0,-GRAVITY);
+  ground = dCreatePlane (space,0,0,1,0);
+
+  // bodies
+	//Positions of Cube 1
+	int xPosition=1;
+	int yPosition=1;
+	int zPosition=1;
+	//Positions of Cube 2
+	int xPosition2=-1;
+	int yPosition2=1;
+	int zPosition2=7;
+	//Positions of Sphere 1
+	int s_xPosition=0;
+	int s_yPosition=-1;
+	int s_zPosition=1;
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //******************* DEFINING THE PHYSICAL/GEOM BODIES *****************
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  body[0] = dBodyCreate (world);
+  //*+*+*+*+*+*+*+*+*+*+*+*
+  dMassSetBox (&m,1,LENGTH,WIDTH,HEIGHT);
+  dMassAdjust (&m,MASS*(2));										//CUBE 1
+  dBodySetMass (body[0],&m);
+  dBodySetPosition (body[0],xPosition,yPosition,zPosition);//<-------------Determines placement of blocks; takes worldBody,x,y,z
+  box[0] = dCreateBox (space,LENGTH,WIDTH,HEIGHT);//<--Determines the dimensions of the box; takes worldBody,length,width,height
+  dGeomSetBody (box[0],body[0]);
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  body[1] = dBodyCreate (world);
+  //*+*+*+*+*+*+*+*+*+*+*+*
+  dMassSetBox (&m,1,LENGTH2,WIDTH2,HEIGHT2);
+  dMassAdjust (&m,MASS*(2));										//CUBE 2
+  dBodySetMass (body[1],&m);
+  dBodySetPosition (body[1],xPosition2,yPosition2,zPosition2);//<-------------Determines placement of blocks; takes worldBody,x,y,z
+  //Not sure what the deal is with the creation of the blocks....
+  box[1] = dCreateBox (space,LENGTH2,WIDTH2,HEIGHT2);//<--Determines the dimensions of the box; takes worldBody,length,width,height
+  dGeomSetBody (box[1],body[1]);
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+	sphere_body[0] = dBodyCreate (world);
+	//*+*+*+*+*+*+*+*+*+*+*+*
+	dQuaternion q;
+	dQFromAxisAndAngle (q,1,0,0,M_PI*0.5);
+	dBodySetQuaternion (sphere_body[0],q);
+	dMassSetSphere (&m,1,RADIUS);									//SPHERE 1
+	dMassAdjust (&m,WMASS); 
+	dBodySetMass (sphere_body[0],&m);//<--Set Spheres mass
+	sphere[0] = dCreateSphere (space,RADIUS);//<-------Creates the sphere
+	dGeomSetBody (sphere[0],sphere_body[0]);
+	dBodySetPosition (sphere_body[0],s_xPosition,s_yPosition,s_zPosition);//<--Determine the placement of sphere
+  //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+	
+  // run simulation
+  dsSimulationLoop (argc,argv,352,288,&fn);
+
+  dJointGroupDestroy (contactgroup);
+  dSpaceDestroy (space);
+  dWorldDestroy (world);
+  dCloseODE();
+  return 0;
+}
